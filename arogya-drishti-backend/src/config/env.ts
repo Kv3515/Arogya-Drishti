@@ -34,10 +34,22 @@ export const config = {
   },
 
   cors: {
-    // In dev, also accept any private LAN origin (mobile testing)
+    // Dev: accept any origin (LAN/mobile testing)
+    // Production: accept origins listed in CORS_ORIGIN env var +
+    //             any *.vercel.app deployment URL automatically
     origin: process.env.NODE_ENV === 'development'
       ? (origin: string | undefined, cb: (e: Error | null, allow?: boolean) => void) => cb(null, true)
-      : (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map(s => s.trim()),
+      : (origin: string | undefined, cb: (e: Error | null, allow?: boolean) => void) => {
+          const allowed = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+            .split(',')
+            .map(s => s.trim());
+          // Always allow Vercel preview/production deployments
+          if (!origin || allowed.includes(origin) || /\.vercel\.app$/.test(origin)) {
+            cb(null, true);
+          } else {
+            cb(new Error(`CORS: origin ${origin} not allowed`));
+          }
+        },
   },
 } as const;
 
