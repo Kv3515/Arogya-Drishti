@@ -1,0 +1,2172 @@
+openapi: 3.1.0
+
+info:
+  title: Arogya Drishti API
+  version: 1.0.0
+  description: |
+    Secure medical intelligence platform for defence personnel (300,000+ scale).
+
+    **Authentication**: Bearer token in Authorization header (JWT access token).
+    Refresh tokens are httpOnly cookies.
+
+    **Rate Limiting**:
+    - Global: 100 requests/minute per IP
+    - Auth endpoints: 10 requests/15 minutes per IP (account lockout: 5 failed attempts / 15 min)
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Local development
+  - url: https://api.arogyadrishti.mil.in/api/v1
+    description: Production
+
+# ─── Security Schemes ─────────────────────────────────────────────────────────
+
+security:
+  - bearerAuth: []
+
+securitySchemes:
+  bearerAuth:
+    type: http
+    scheme: bearer
+    bearerFormat: JWT
+    description: JWT access token (valid 15 minutes)
+
+# ─── Components / Schemas ──────────────────────────────────────────────────────
+
+components:
+  schemas:
+    # Core Domain Models
+    Individual:
+      type: object
+      description: Defence personnel medical record
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier
+        service_number:
+          type: string
+          pattern: '^[A-Z0-9]{1,50}$'
+          description: Military service number (unique)
+        name:
+          type: string
+          maxLength: 255
+        date_of_birth:
+          type: string
+          format: date
+        sex:
+          type: string
+          enum: [male, female, other]
+        blood_group:
+          type: string
+          enum: [A+, A-, B+, B-, AB+, AB-, O+, O-]
+        unit:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            unit_name:
+              type: string
+        contact_info:
+          type: object
+          nullable: true
+          additionalProperties: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - service_number
+        - name
+        - date_of_birth
+        - sex
+        - blood_group
+        - unit
+        - is_active
+        - created_at
+        - updated_at
+
+    User:
+      type: object
+      description: System user account
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          pattern: '^[a-zA-Z0-9_-]{3,100}$'
+        role:
+          type: string
+          enum: [super_admin, medical_officer, paramedic, commander, individual]
+        unit_id:
+          type: string
+          format: uuid
+          nullable: true
+        linked_individual_id:
+          type: string
+          format: uuid
+          nullable: true
+        is_active:
+          type: boolean
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - username
+        - role
+        - is_active
+        - created_at
+
+    Unit:
+      type: object
+      description: Organizational unit in hierarchy
+      properties:
+        id:
+          type: string
+          format: uuid
+        unit_name:
+          type: string
+          maxLength: 255
+        parent_unit_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - unit_name
+        - created_at
+
+    MedicalHistory:
+      type: object
+      description: Patient visit/consultation record
+      properties:
+        id:
+          type: string
+          format: uuid
+        individual_id:
+          type: string
+          format: uuid
+        visit_date:
+          type: string
+          format: date
+        visit_type:
+          type: string
+          enum: [OPD, emergency, annual, field, telemedicine]
+        chief_complaint:
+          type: string
+          nullable: true
+        symptoms:
+          type: object
+          additionalProperties: true
+        diagnosis_code:
+          type: string
+          maxLength: 20
+          description: ICD-10 code
+        diagnosis_text:
+          type: string
+          maxLength: 500
+        severity:
+          type: string
+          enum: [mild, moderate, severe, critical]
+        is_sensitive:
+          type: boolean
+          description: Flag for sensitive medical information
+        doctor:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+        notes:
+          type: string
+          nullable: true
+        prescriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Prescription'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - individual_id
+        - visit_date
+        - visit_type
+        - diagnosis_code
+        - diagnosis_text
+        - severity
+        - is_sensitive
+        - doctor
+        - created_at
+        - updated_at
+
+    Prescription:
+      type: object
+      description: Medication prescription
+      properties:
+        id:
+          type: string
+          format: uuid
+        medical_history_id:
+          type: string
+          format: uuid
+        individual_id:
+          type: string
+          format: uuid
+        medication_name:
+          type: string
+          maxLength: 255
+        dosage:
+          type: string
+          maxLength: 100
+          example: "500 mg"
+        frequency:
+          type: string
+          maxLength: 100
+          example: "Once daily"
+        duration_days:
+          type: integer
+          minimum: 1
+        route:
+          type: string
+          enum: [oral, IV, IM, topical, inhaled, other]
+        instructions:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - medical_history_id
+        - individual_id
+        - medication_name
+        - dosage
+        - frequency
+        - duration_days
+        - route
+        - is_active
+        - created_at
+
+    VitalsLog:
+      type: object
+      description: Physiological measurements
+      properties:
+        id:
+          type: string
+          format: uuid
+        individual_id:
+          type: string
+          format: uuid
+        recorded_at:
+          type: string
+          format: date-time
+        blood_pressure_systolic:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 300
+        blood_pressure_diastolic:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 300
+        heart_rate:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 300
+        temperature_celsius:
+          type: number
+          format: decimal
+          nullable: true
+          minimum: 35.0
+          maximum: 42.0
+        oxygen_saturation:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+        weight_kg:
+          type: number
+          format: decimal
+          nullable: true
+          minimum: 0
+          maximum: 300
+        height_cm:
+          type: number
+          format: decimal
+          nullable: true
+          minimum: 0
+          maximum: 250
+        recorder:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - individual_id
+        - recorded_at
+        - recorder
+        - created_at
+
+    InjuryLog:
+      type: object
+      description: Injury/trauma incident record
+      properties:
+        id:
+          type: string
+          format: uuid
+        individual_id:
+          type: string
+          format: uuid
+        injury_date:
+          type: string
+          format: date
+        injury_type:
+          type: string
+          enum: [fracture, laceration, burn, contusion, sprain, blast, other]
+        body_part:
+          type: string
+          maxLength: 100
+        cause:
+          type: string
+          enum: [combat, training, accident, sports, other]
+        recovery_status:
+          type: string
+          enum: [active, recovering, recovered, chronic]
+        duty_status:
+          type: string
+          enum: [full_duty, light_duty, non_duty, hospitalized]
+        notes:
+          type: string
+          nullable: true
+        recorder:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - individual_id
+        - injury_date
+        - injury_type
+        - body_part
+        - cause
+        - recovery_status
+        - duty_status
+        - recorder
+        - created_at
+        - updated_at
+
+    AnnualMedicalExam:
+      type: object
+      description: Annual medical examination record
+      properties:
+        id:
+          type: string
+          format: uuid
+        individual_id:
+          type: string
+          format: uuid
+        exam_date:
+          type: string
+          format: date
+        fitness_status:
+          type: string
+          enum: [fit, temporarily_unfit, permanently_unfit]
+        fitness_valid_until:
+          type: string
+          format: date
+        bmi:
+          type: number
+          format: decimal
+          nullable: true
+          minimum: 0
+          maximum: 100
+        vision_left:
+          type: string
+          maxLength: 20
+          nullable: true
+          example: "6/6"
+        vision_right:
+          type: string
+          maxLength: 20
+          nullable: true
+          example: "6/6"
+        hearing_status:
+          type: string
+          enum: [normal, impaired, deaf]
+        lab_results:
+          type: object
+          nullable: true
+          additionalProperties: true
+        remarks:
+          type: string
+          nullable: true
+        examining_officer:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - individual_id
+        - exam_date
+        - fitness_status
+        - fitness_valid_until
+        - hearing_status
+        - examining_officer
+        - created_at
+
+    AuditLog:
+      type: object
+      description: Access and modification audit trail
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [create, read, update, delete, login, logout, export]
+        resource_type:
+          type: string
+          maxLength: 100
+        resource_id:
+          type: string
+          format: uuid
+          nullable: true
+        old_value:
+          type: object
+          nullable: true
+          additionalProperties: true
+        new_value:
+          type: object
+          nullable: true
+          additionalProperties: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - action
+        - resource_type
+        - created_at
+
+    # Auth/Response Models
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 100
+        password:
+          type: string
+          minLength: 8
+          maxLength: 255
+      required:
+        - username
+        - password
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              description: JWT bearer token (15 min expiry)
+            expiresIn:
+              type: integer
+              example: 900
+              description: Seconds until token expiry
+            user:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                username:
+                  type: string
+                role:
+                  type: string
+                unitId:
+                  type: string
+                  format: uuid
+                  nullable: true
+          required:
+            - accessToken
+            - expiresIn
+            - user
+      required:
+        - success
+        - data
+
+    RefreshResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            expiresIn:
+              type: integer
+          required:
+            - accessToken
+            - expiresIn
+      required:
+        - success
+        - data
+
+    # Analytics Models
+    AnalyticsFitnessSummary:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          properties:
+            unit_name:
+              type: string
+            unit_id:
+              type: string
+              format: uuid
+            fitness_summary:
+              type: object
+              properties:
+                fit:
+                  type: integer
+                temporarily_unfit:
+                  type: integer
+                permanently_unfit:
+                  type: integer
+                total:
+                  type: integer
+                pct_fit:
+                  type: number
+                  format: double
+                pct_deployable:
+                  type: number
+                  format: double
+              required:
+                - fit
+                - temporarily_unfit
+                - permanently_unfit
+                - total
+                - pct_fit
+                - pct_deployable
+      required:
+        - success
+        - data
+
+    AnalyticsInjuryRates:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          properties:
+            unit_name:
+              type: string
+            unit_id:
+              type: string
+              format: uuid
+            injury_summary:
+              type: object
+              properties:
+                total_injuries:
+                  type: integer
+                active:
+                  type: integer
+                recovering:
+                  type: integer
+                recovered:
+                  type: integer
+                chronic:
+                  type: integer
+                injury_rate_per_100:
+                  type: number
+                  format: double
+              required:
+                - total_injuries
+                - active
+                - recovering
+                - recovered
+                - chronic
+                - injury_rate_per_100
+      required:
+        - success
+        - data
+
+    DeploymentReadiness:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          properties:
+            unit_name:
+              type: string
+            unit_id:
+              type: string
+              format: uuid
+            readiness:
+              type: object
+              properties:
+                deployable:
+                  type: integer
+                partially_deployable:
+                  type: integer
+                non_deployable:
+                  type: integer
+                total:
+                  type: integer
+                deployability_index:
+                  type: number
+                  format: double
+                  description: Percentage of fully deployable personnel
+              required:
+                - deployable
+                - partially_deployable
+                - non_deployable
+                - total
+                - deployability_index
+      required:
+        - success
+        - data
+
+    # Generic Response Models
+    PaginatedResponse:
+      oneOf:
+        - type: object
+          properties:
+            success:
+              type: boolean
+              const: true
+            data:
+              type: array
+              items: {}
+            pagination:
+              type: object
+              properties:
+                page:
+                  type: integer
+                limit:
+                  type: integer
+                total:
+                  type: integer
+                pages:
+                  type: integer
+              required:
+                - page
+                - limit
+                - total
+                - pages
+          required:
+            - success
+            - data
+            - pagination
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Human-readable error message
+        code:
+          type: string
+          description: Machine-readable error code
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+      required:
+        - success
+        - error
+        - code
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          const: "ok"
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - status
+        - timestamp
+
+# ─── Paths / Endpoints ────────────────────────────────────────────────────────
+
+paths:
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login with credentials
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful; refresh token set in httpOnly cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Account locked due to too many failed attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+                example:
+                  success: false
+                  error: "Account locked due to too many failed attempts"
+                  code: "ACCOUNT_LOCKED"
+                  details:
+                    lockedUntil: "2026-03-27T23:45:00Z"
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      operationId: refreshToken
+      security: []
+      responses:
+        '200':
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          description: Refresh token invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout (revoke refresh token)
+      operationId: logout
+      responses:
+        '204':
+          description: Logout successful
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /individuals:
+    get:
+      tags:
+        - Individuals
+      summary: List individuals with filtering
+      operationId: listIndividuals
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: search
+          in: query
+          description: Search by service_number or name (min 3 chars)
+          schema:
+            type: string
+        - name: unitId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of individuals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Individuals
+      summary: Create individual record
+      operationId: createIndividual
+      x-roles: [super_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service_number:
+                  type: string
+                  pattern: '^[A-Z0-9]{1,50}$'
+                name:
+                  type: string
+                  maxLength: 255
+                date_of_birth:
+                  type: string
+                  format: date
+                sex:
+                  type: string
+                  enum: [male, female, other]
+                blood_group:
+                  type: string
+                  enum: [A+, A-, B+, B-, AB+, AB-, O+, O-]
+                unit_id:
+                  type: string
+                  format: uuid
+                contact_info:
+                  type: object
+                  nullable: true
+              required:
+                - service_number
+                - name
+                - date_of_birth
+                - sex
+                - blood_group
+                - unit_id
+      responses:
+        '201':
+          description: Individual created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Individual'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Service number already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /individuals/{serviceNumber}:
+    get:
+      tags:
+        - Individuals
+      summary: Get individual profile
+      operationId: getIndividual
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Individual details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Individual'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Individuals
+      summary: Update individual record
+      operationId: updateIndividual
+      x-roles: [super_admin, medical_officer]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                contact_info:
+                  type: object
+                  nullable: true
+      responses:
+        '200':
+          description: Individual updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Individual'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/medical-history:
+    get:
+      tags:
+        - Medical History
+      summary: List medical history for individual
+      operationId: listMedicalHistory
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: visitType
+          in: query
+          schema:
+            type: string
+            enum: [OPD, emergency, annual, field, telemedicine]
+        - name: from
+          in: query
+          description: ISO date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: ISO date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Medical history records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Medical History
+      summary: Create medical history entry
+      operationId: createMedicalHistory
+      x-roles: [super_admin, medical_officer, paramedic]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                visit_date:
+                  type: string
+                  format: date
+                visit_type:
+                  type: string
+                  enum: [OPD, emergency, annual, field, telemedicine]
+                chief_complaint:
+                  type: string
+                  nullable: true
+                symptoms:
+                  type: object
+                  additionalProperties: true
+                diagnosis_code:
+                  type: string
+                  maxLength: 20
+                diagnosis_text:
+                  type: string
+                  maxLength: 500
+                severity:
+                  type: string
+                  enum: [mild, moderate, severe, critical]
+                is_sensitive:
+                  type: boolean
+                notes:
+                  type: string
+                  nullable: true
+              required:
+                - visit_date
+                - visit_type
+                - diagnosis_code
+                - diagnosis_text
+                - severity
+      responses:
+        '201':
+          description: Medical history entry created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/MedicalHistory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/medical-history/{id}:
+    put:
+      tags:
+        - Medical History
+      summary: Update medical history entry
+      operationId: updateMedicalHistory
+      x-roles: [super_admin, medical_officer]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                diagnosis_code:
+                  type: string
+                  maxLength: 20
+                diagnosis_text:
+                  type: string
+                  maxLength: 500
+                severity:
+                  type: string
+                  enum: [mild, moderate, severe, critical]
+                is_sensitive:
+                  type: boolean
+                notes:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Medical history entry updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/MedicalHistory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/vitals:
+    get:
+      tags:
+        - Vitals
+      summary: List vitals for individual
+      operationId: listVitals
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: from
+          in: query
+          description: ISO datetime
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: ISO datetime
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Vitals records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Vitals
+      summary: Record vitals
+      operationId: createVitals
+      x-roles: [super_admin, medical_officer, paramedic]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recorded_at:
+                  type: string
+                  format: date-time
+                blood_pressure_systolic:
+                  type: integer
+                  nullable: true
+                blood_pressure_diastolic:
+                  type: integer
+                  nullable: true
+                heart_rate:
+                  type: integer
+                  nullable: true
+                temperature_celsius:
+                  type: number
+                  format: decimal
+                  nullable: true
+                oxygen_saturation:
+                  type: integer
+                  nullable: true
+                weight_kg:
+                  type: number
+                  format: decimal
+                  nullable: true
+                height_cm:
+                  type: number
+                  format: decimal
+                  nullable: true
+              required:
+                - recorded_at
+      responses:
+        '201':
+          description: Vitals recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/VitalsLog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/injuries:
+    get:
+      tags:
+        - Injuries
+      summary: List injuries for individual
+      operationId: listInjuries
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, recovering, recovered, chronic]
+        - name: from
+          in: query
+          description: ISO date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: ISO date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Injury records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Injuries
+      summary: Record injury
+      operationId: createInjury
+      x-roles: [super_admin, medical_officer, paramedic]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                injury_date:
+                  type: string
+                  format: date
+                injury_type:
+                  type: string
+                  enum: [fracture, laceration, burn, contusion, sprain, blast, other]
+                body_part:
+                  type: string
+                  maxLength: 100
+                cause:
+                  type: string
+                  enum: [combat, training, accident, sports, other]
+                recovery_status:
+                  type: string
+                  enum: [active, recovering, recovered, chronic]
+                duty_status:
+                  type: string
+                  enum: [full_duty, light_duty, non_duty, hospitalized]
+                notes:
+                  type: string
+                  nullable: true
+              required:
+                - injury_date
+                - injury_type
+                - body_part
+                - cause
+                - recovery_status
+                - duty_status
+      responses:
+        '201':
+          description: Injury recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/InjuryLog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/injuries/{id}:
+    put:
+      tags:
+        - Injuries
+      summary: Update injury record
+      operationId: updateInjury
+      x-roles: [super_admin, medical_officer, paramedic]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recovery_status:
+                  type: string
+                  enum: [active, recovering, recovered, chronic]
+                duty_status:
+                  type: string
+                  enum: [full_duty, light_duty, non_duty, hospitalized]
+                notes:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Injury record updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/InjuryLog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/prescriptions:
+    get:
+      tags:
+        - Prescriptions
+      summary: List active prescriptions
+      operationId: listPrescriptions
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Prescriptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/medical-history/{historyId}/prescriptions:
+    post:
+      tags:
+        - Prescriptions
+      summary: Create prescription
+      operationId: createPrescription
+      x-roles: [super_admin, medical_officer]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: historyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                medication_name:
+                  type: string
+                  maxLength: 255
+                dosage:
+                  type: string
+                  maxLength: 100
+                frequency:
+                  type: string
+                  maxLength: 100
+                duration_days:
+                  type: integer
+                  minimum: 1
+                route:
+                  type: string
+                  enum: [oral, IV, IM, topical, inhaled, other]
+                instructions:
+                  type: string
+                  nullable: true
+              required:
+                - medication_name
+                - dosage
+                - frequency
+                - duration_days
+                - route
+      responses:
+        '201':
+          description: Prescription created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Prescription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /prescriptions/{id}/deactivate:
+    put:
+      tags:
+        - Prescriptions
+      summary: Deactivate prescription
+      operationId: deactivatePrescription
+      x-roles: [super_admin, medical_officer]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prescription deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/Prescription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /individuals/{serviceNumber}/annual-exam:
+    get:
+      tags:
+        - Annual Exams
+      summary: List annual medical exams
+      operationId: listAnnualExams
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Annual exam records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Annual Exams
+      summary: Create annual medical exam
+      operationId: createAnnualExam
+      x-roles: [super_admin, medical_officer]
+      parameters:
+        - name: serviceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exam_date:
+                  type: string
+                  format: date
+                fitness_status:
+                  type: string
+                  enum: [fit, temporarily_unfit, permanently_unfit]
+                fitness_valid_until:
+                  type: string
+                  format: date
+                bmi:
+                  type: number
+                  format: decimal
+                  nullable: true
+                vision_left:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                vision_right:
+                  type: string
+                  maxLength: 20
+                  nullable: true
+                hearing_status:
+                  type: string
+                  enum: [normal, impaired, deaf]
+                lab_results:
+                  type: object
+                  nullable: true
+                remarks:
+                  type: string
+                  nullable: true
+              required:
+                - exam_date
+                - fitness_status
+                - fitness_valid_until
+                - hearing_status
+      responses:
+        '201':
+          description: Annual exam recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/AnnualMedicalExam'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/unit/{unitId}/fitness-summary:
+    get:
+      tags:
+        - Analytics
+      summary: Unit fitness summary
+      operationId: fitnessSummary
+      x-roles: [super_admin, medical_officer, commander]
+      parameters:
+        - name: unitId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Aggregated fitness statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsFitnessSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/unit/{unitId}/disease-trends:
+    get:
+      tags:
+        - Analytics
+      summary: Top disease codes by frequency (last 90 days)
+      operationId: diseaseTrends
+      x-roles: [super_admin, medical_officer, paramedic]
+      parameters:
+        - name: unitId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Disease trend analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    type: object
+                    properties:
+                      unit_name:
+                        type: string
+                      unit_id:
+                        type: string
+                        format: uuid
+                      top_diagnoses:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            diagnosis_code:
+                              type: string
+                            diagnosis_text:
+                              type: string
+                            count:
+                              type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/unit/{unitId}/injury-rates:
+    get:
+      tags:
+        - Analytics
+      summary: Unit injury statistics
+      operationId: injuryRates
+      x-roles: [super_admin, medical_officer, commander, paramedic]
+      parameters:
+        - name: unitId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Aggregated injury statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsInjuryRates'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/unit/{unitId}/deployment-readiness:
+    get:
+      tags:
+        - Analytics
+      summary: Deployment readiness assessment
+      operationId: deploymentReadiness
+      x-roles: [super_admin, medical_officer, commander]
+      parameters:
+        - name: unitId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deployment readiness metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentReadiness'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users:
+    get:
+      tags:
+        - Admin
+      summary: List all users
+      operationId: listUsers
+      x-roles: [super_admin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Admin
+      summary: Create system user
+      operationId: createUser
+      x-roles: [super_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  pattern: '^[a-zA-Z0-9_-]{3,100}$'
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 255
+                role:
+                  type: string
+                  enum: [super_admin, medical_officer, paramedic, commander, individual]
+                unit_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                linked_individual_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+              required:
+                - username
+                - password
+                - role
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/users/{id}:
+    put:
+      tags:
+        - Admin
+      summary: Update user
+      operationId: updateUser
+      x-roles: [super_admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [super_admin, medical_officer, paramedic, commander, individual]
+                is_active:
+                  type: boolean
+                unit_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/audit-logs:
+    get:
+      tags:
+        - Admin
+      summary: List audit logs
+      operationId: listAuditLogs
+      x-roles: [super_admin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [create, read, update, delete, login, logout, export]
+        - name: from
+          in: query
+          description: ISO datetime
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: ISO datetime
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Audit log records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+# ─── Response Templates ────────────────────────────────────────────────────────
+
+components:
+  responses:
+    Unauthorized:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Authentication required"
+            code: "AUTH_REQUIRED"
+
+    Forbidden:
+      description: Insufficient permissions for this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Insufficient permissions"
+            code: "FORBIDDEN"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Resource not found"
+            code: "NOT_FOUND"
+
+    RateLimitExceeded:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Too many requests. Please try again later."
+            code: "RATE_LIMIT_EXCEEDED"
+
+tags:
+  - name: System
+    description: Health and diagnostics
+  - name: Authentication
+    description: Login, refresh, logout
+  - name: Individuals
+    description: Personnel records (name, contact, unit assignment)
+  - name: Medical History
+    description: Visit/consultation records and diagnoses
+  - name: Prescriptions
+    description: Active medication prescriptions
+  - name: Vitals
+    description: Physiological measurements (BP, HR, temp, SpO2, etc.)
+  - name: Injuries
+    description: Injury/trauma incident tracking
+  - name: Annual Exams
+    description: Annual fitness certification and medical clearance
+  - name: Analytics
+    description: Aggregated unit-level insights (fitness, disease trends, deployment readiness)
+  - name: Admin
+    description: User management and audit logs (super_admin only)

@@ -1,0 +1,284 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import type { UserRole } from '@/lib/api';
+import {
+  Users, ClipboardList, HeartPulse, BarChart3, Activity,
+  Bell, Search, LogOut, Menu, ChevronDown,
+  ShieldCheck, Stethoscope, Crosshair,
+} from 'lucide-react';\nimport { ThemeToggle, SystemStatus, LiveIndicator } from '@/components/ui';
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ReactNode;
+}
+
+const roleNavItems: Record<UserRole, NavItem[]> = {
+  super_admin: [
+    { label: 'Users',      href: '/dashboard/admin',           icon: <Users className="h-4 w-4" /> },
+    { label: 'Audit Logs', href: '/dashboard/admin?tab=audit', icon: <ClipboardList className="h-4 w-4" /> },
+  ],
+  medical_officer: [
+    { label: 'Patients', href: '/dashboard/doctor', icon: <Users className="h-4 w-4" /> },
+  ],
+  paramedic: [
+    { label: 'Patients', href: '/dashboard/doctor', icon: <Users className="h-4 w-4" /> },
+  ],
+  commander: [
+    { label: 'Readiness', href: '/dashboard/commander', icon: <BarChart3 className="h-4 w-4" /> },
+  ],
+  individual: [
+    { label: 'My Health', href: '/dashboard/me', icon: <HeartPulse className="h-4 w-4" /> },
+  ],
+};
+
+// All-dashboard quick links shown in every sidebar (useful in DEV mode)
+const allDashboards: NavItem[] = [
+  { label: 'Admin',     href: '/dashboard/admin',     icon: <ShieldCheck className="h-4 w-4" /> },
+  { label: 'Doctor',    href: '/dashboard/doctor',    icon: <Stethoscope className="h-4 w-4" /> },
+  { label: 'Commander', href: '/dashboard/commander', icon: <Crosshair className="h-4 w-4" /> },
+  { label: 'My Health', href: '/dashboard/me',        icon: <Activity className="h-4 w-4" /> },
+];
+
+const pageTitles: Record<string, string> = {
+  '/dashboard/admin':     'Admin Console',
+  '/dashboard/doctor':    'Patient Records',
+  '/dashboard/commander': 'Operational Readiness',
+  '/dashboard/me':        'My Health Record',
+};
+
+export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const { user, logout } = useAuth();
+  const pathname = usePathname();
+  const [mobileOpen, setMobileOpen]    = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [tabParam, setTabParam]         = useState('');
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Read ?tab= from URL on client — avoids useSearchParams + Suspense
+  useEffect(() => {
+    setTabParam(new URLSearchParams(window.location.search).get('tab') ?? '');
+  }, [pathname]);
+
+  // Close drawer on route change
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  if (!user) return null;
+
+  const navItems  = roleNavItems[user.role] ?? [];
+  const initials  = user.username.slice(0, 2).toUpperCase();
+  const pageTitle = Object.entries(pageTitles).find(([p]) => pathname.startsWith(p))?.[1] ?? 'Dashboard';
+
+  const isActive = (item: NavItem) => {
+    if (item.href.includes('?')) {
+      const [path, qs] = item.href.split('?');
+      return pathname === path && tabParam === (new URLSearchParams(qs).get('tab') ?? '');
+    }
+    const siblingTabActive = navItems.some((n) => {
+      if (!n.href.includes('?')) return false;
+      const [p, qs] = n.href.split('?');
+      return pathname === p && tabParam === (new URLSearchParams(qs).get('tab') ?? '');
+    });
+    if (siblingTabActive) return false;
+    return pathname === item.href || pathname.startsWith(item.href + '/');
+  };
+
+  const NavLink = ({ item }: { item: NavItem }) => {
+    const active = isActive(item);
+    return (
+      <Link
+        href={item.href}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group ${
+          active
+            ? 'bg-white/15 text-white shadow-sm'
+            : 'text-white/55 hover:bg-white/[0.08] hover:text-white/90'
+        }`}
+      >
+        <span className={`flex-shrink-0 transition-colors ${active ? 'text-white' : 'text-white/40 group-hover:text-white/70'}`}>
+          {item.icon}
+        </span>
+        <span className="flex-1">{item.label}</span>
+        {active && <span className="h-1.5 w-1.5 rounded-full bg-brand-300 flex-shrink-0" />}
+      </Link>
+    );
+  };
+
+  const sidebarContent = (
+    <>
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10 flex-shrink-0">
+        <div className="h-8 w-8 rounded-xl bg-brand-500/25 flex items-center justify-center flex-shrink-0">
+          <Activity className="h-4 w-4 text-brand-200" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white leading-tight">Arogya Drishti</p>
+          <p className="text-[10px] text-white/35 uppercase tracking-widest">Medical Intelligence</p>
+        </div>
+      </div>
+
+      {/* User card */}
+      <div className="px-4 py-3.5 border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-white truncate">{user.username}</p>
+            <p className="text-[11px] text-white/40 capitalize truncate">{user.role.replace(/_/g, ' ')}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        <p className="px-3 pt-1 pb-2 text-[10px] font-semibold text-white/30 uppercase tracking-widest">Workspace</p>
+        {navItems.map((item) => <NavLink key={item.href} item={item} />)}
+
+        <div className="pt-3 mt-1">
+          {process.env.NEXT_PUBLIC_DEV_BYPASS === 'true' && (
+            <>
+              <p className="px-3 pb-2 text-[10px] font-semibold text-white/30 uppercase tracking-widest">All Dashboards</p>
+              {allDashboards.map((item) => {
+            const active = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group ${
+                  active ? 'bg-white/12 text-white' : 'text-white/45 hover:bg-white/[0.08] hover:text-white/80'
+                }`}
+              >
+                <span className={`flex-shrink-0 transition-colors ${active ? 'text-white/80' : 'text-white/30 group-hover:text-white/60'}`}>
+                  {item.icon}
+                </span>
+                {item.label}
+              </Link>
+            );
+          })}
+            </>
+          )}
+        </div>
+      </nav>
+
+      {/* Sign out */}
+      <div className="px-3 py-3 border-t border-white/10 flex-shrink-0">
+        <button
+          onClick={() => logout()}
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm text-white/45 hover:bg-white/[0.08] hover:text-white/75 transition-all duration-150"
+        >
+          <LogOut className="h-4 w-4 flex-shrink-0" />
+          Sign out
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className=\"flex h-screen bg-tactical-light dark:bg-nvg-dark overflow-hidden transition-colors duration-300 grid-tactical\">
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className=\"fixed inset-0 bg-black/60 z-20 md:hidden backdrop-blur-tactical\"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-tactical-crimson/95 dark:bg-nvg-dark/95 backdrop-blur-tactical flex-shrink-0 transition-all duration-300 ease-out md:static md:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {sidebarContent}
+      </aside>
+
+      {/* Right column */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        {/* Topbar */}
+        <header className=\"flex-shrink-0 h-16 glass-panel border-b border-glass-white-20 dark:border-glass-nvg-20 flex items-center gap-3 px-4 md:px-6\">
+          <button
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+            className=\"md:hidden p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-glass-white-10 dark:hover:bg-glass-nvg-10 transition-all duration-200\"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <div className=\"flex items-center gap-3\">\n            <span className=\"hidden md:block section-title\">{pageTitle}</span>\n            <LiveIndicator type=\"live\" className=\"hidden md:inline-flex\" />\n          </div>
+
+          {/* Search */}
+          <div className="flex-1 max-w-xs ml-1 md:ml-4">
+            <div className="relative">
+              <Search className=\"absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500 dark:text-gray-400 pointer-events-none\" />
+              <input
+                type="search"
+                placeholder="Search…"
+                className=\"input-tactical w-full h-9 pl-8 pr-3 text-xs\"
+              />
+            </div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-1">
+            {/* Theme Toggle */}\n            <ThemeToggle className=\"hidden sm:flex\" />\n            \n            {/* Notification bell */}
+            <button className=\"relative p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-glass-white-10 dark:hover:bg-glass-nvg-10 transition-all duration-200\">
+              <Bell className="h-4 w-4" />
+              <span className=\"absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-status-operational ring-1 ring-white dark:ring-nvg-dark animate-pulse-tactical\" />
+            </button>
+
+            {/* User menu */}
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setUserMenuOpen((v) => !v)}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="h-6 w-6 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                  {initials}
+                </div>
+                <span className="hidden md:block text-xs font-medium text-gray-700 max-w-[120px] truncate">{user.username}</span>
+                <ChevronDown className="h-3 w-3 text-gray-400 flex-shrink-0" />
+              </button>
+
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl border border-gray-100 shadow-xl ring-1 ring-black/5 py-2 z-50">
+                  <div className="px-4 py-2.5 border-b border-gray-50 mb-1">
+                    <p className="text-xs font-bold text-gray-900">{user.username}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 capitalize">{user.role.replace(/_/g, ' ')}</p>
+                  </div>
+                  <button
+                    onClick={() => { setUserMenuOpen(false); logout(); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                  >
+                    <LogOut className="h-3.5 w-3.5 text-gray-400" />
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}

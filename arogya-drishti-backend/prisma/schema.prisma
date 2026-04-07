@@ -1,0 +1,409 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────────
+
+enum Sex {
+  male
+  female
+  other
+}
+
+enum BloodGroup {
+  A_POS   @map("A+")
+  A_NEG   @map("A-")
+  B_POS   @map("B+")
+  B_NEG   @map("B-")
+  AB_POS  @map("AB+")
+  AB_NEG  @map("AB-")
+  O_POS   @map("O+")
+  O_NEG   @map("O-")
+}
+
+enum UserRole {
+  super_admin
+  medical_officer
+  paramedic
+  commander
+  individual
+}
+
+enum VisitType {
+  OPD
+  emergency
+  annual
+  field
+  telemedicine
+}
+
+enum Severity {
+  mild
+  moderate
+  severe
+  critical
+}
+
+enum MedicationRoute {
+  oral
+  IV
+  IM
+  topical
+  inhaled
+  other
+}
+
+enum InjuryType {
+  fracture
+  laceration
+  burn
+  contusion
+  sprain
+  blast
+  other
+}
+
+enum InjuryCause {
+  combat
+  training
+  accident
+  sports
+  other
+}
+
+enum RecoveryStatus {
+  active
+  recovering
+  recovered
+  chronic
+}
+
+enum DutyStatus {
+  full_duty
+  light_duty
+  non_duty
+  hospitalized
+}
+
+
+enum HearingStatus {
+  normal
+  impaired
+  deaf
+}
+
+enum AllergyReactionType {
+  anaphylaxis
+  urticaria
+  angioedema
+  rash
+  gi_distress
+  respiratory
+  unknown
+}
+
+enum AllergySeverity {
+  mild
+  moderate
+  severe
+  life_threatening
+}
+
+enum AllergyStatus {
+  active
+  resolved
+  unconfirmed
+}
+
+enum NotificationType {
+  vitals_critical
+  vitals_warning
+  fitness_expired
+  allergy_alert
+}
+
+enum AuditAction {
+  create
+  read
+  update
+  delete
+  login
+  logout
+  export
+}
+
+// ─── Models ─────────────────────────────────────────────────────────────────────
+
+model Unit {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  unit_name      String   @db.VarChar(255)
+  parent_unit_id String?  @db.Uuid
+  created_at     DateTime @default(now()) @db.Timestamptz()
+
+  // Relations
+  parent_unit  Unit?  @relation("UnitHierarchy", fields: [parent_unit_id], references: [id])
+  child_units  Unit[] @relation("UnitHierarchy")
+  individuals  Individual[]
+  users        User[]
+
+  @@map("units")
+}
+
+model Individual {
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  service_number String     @unique @db.VarChar(50)
+  name           String     @db.VarChar(255)
+  date_of_birth  DateTime   @db.Date
+  sex            Sex
+  blood_group    BloodGroup
+  unit_id        String     @db.Uuid
+  contact_info   Json?
+  photo_url      String?    @db.Text
+  is_active      Boolean    @default(true)
+  created_at     DateTime   @default(now()) @db.Timestamptz()
+  updated_at     DateTime   @default(now()) @updatedAt @db.Timestamptz()
+
+  // Relations
+  unit              Unit               @relation(fields: [unit_id], references: [id])
+  medical_histories MedicalHistory[]
+  prescriptions     Prescription[]
+  vitals_logs       VitalsLog[]
+  injury_logs       InjuryLog[]
+  annual_exams      AnnualMedicalExam[]
+  allergies         Allergy[]
+  linked_users      User[]
+  notifications     Notification[]
+
+  @@index([service_number])
+  @@index([unit_id])
+  @@map("individuals")
+}
+
+model User {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username           String    @unique @db.VarChar(100)
+  password_hash      String    @db.Text
+  role               UserRole
+  linked_individual_id String? @db.Uuid
+  unit_id            String?   @db.Uuid
+  is_active          Boolean   @default(true)
+  last_login         DateTime? @db.Timestamptz()
+  created_at         DateTime  @default(now()) @db.Timestamptz()
+
+  // Relations
+  linked_individual  Individual?     @relation(fields: [linked_individual_id], references: [id])
+  unit               Unit?           @relation(fields: [unit_id], references: [id])
+  medical_histories  MedicalHistory[] @relation("DoctorHistories")
+  vitals_recorded    VitalsLog[]
+  injuries_recorded  InjuryLog[]
+  exams_conducted    AnnualMedicalExam[]
+  allergies_confirmed Allergy[]       @relation("AllergyConfirmedBy")
+  audit_logs         AuditLog[]
+  refresh_tokens     RefreshToken[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+model MedicalHistory {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  individual_id    String    @db.Uuid
+  visit_date       DateTime  @db.Date
+  visit_type       VisitType
+  chief_complaint  String?   @db.Text
+  symptoms         Json
+  diagnosis_code   String    @db.VarChar(20)
+  diagnosis_text   String    @db.VarChar(500)
+  severity         Severity
+  is_sensitive     Boolean   @default(false)
+  doctor_id        String    @db.Uuid
+  notes            String?   @db.Text
+  created_at       DateTime  @default(now()) @db.Timestamptz()
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz()
+
+  // Relations
+  individual    Individual     @relation(fields: [individual_id], references: [id])
+  doctor        User           @relation("DoctorHistories", fields: [doctor_id], references: [id])
+  prescriptions Prescription[]
+
+  @@index([individual_id, visit_date])
+  @@map("medical_history")
+}
+
+model Prescription {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  medical_history_id String          @db.Uuid
+  individual_id      String          @db.Uuid
+  medication_name    String          @db.VarChar(255)
+  dosage             String          @db.VarChar(100)
+  frequency          String          @db.VarChar(100)
+  duration_days      Int
+  route              MedicationRoute
+  instructions       String?         @db.Text
+  is_active          Boolean         @default(true)
+  created_at         DateTime        @default(now()) @db.Timestamptz()
+
+  // Relations
+  medical_history MedicalHistory @relation(fields: [medical_history_id], references: [id])
+  individual      Individual     @relation(fields: [individual_id], references: [id])
+
+  @@map("prescriptions")
+}
+
+model VitalsLog {
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  individual_id            String   @db.Uuid
+  recorded_at              DateTime @db.Timestamptz()
+  blood_pressure_systolic  Int?     @db.SmallInt
+  blood_pressure_diastolic Int?     @db.SmallInt
+  heart_rate               Int?     @db.SmallInt
+  temperature_celsius      Decimal? @db.Decimal(4, 1)
+  oxygen_saturation        Int?     @db.SmallInt
+  weight_kg                Decimal? @db.Decimal(5, 2)
+  height_cm                Decimal? @db.Decimal(5, 1)
+  respiratory_rate         Int?     @db.SmallInt
+  pain_scale              Int?     @db.SmallInt
+  recorded_by              String   @db.Uuid
+  created_at               DateTime @default(now()) @db.Timestamptz()
+
+  // Relations
+  individual Individual @relation(fields: [individual_id], references: [id])
+  recorder   User       @relation(fields: [recorded_by], references: [id])
+
+  @@index([individual_id, recorded_at])
+  @@map("vitals_log")
+}
+
+model InjuryLog {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  individual_id   String         @db.Uuid
+  injury_date     DateTime       @db.Date
+  injury_type     InjuryType
+  body_part       String         @db.VarChar(100)
+  cause           InjuryCause
+  recovery_status RecoveryStatus
+  duty_status     DutyStatus
+  notes           String?        @db.Text
+  recorded_by     String         @db.Uuid
+  created_at      DateTime       @default(now()) @db.Timestamptz()
+  updated_at      DateTime       @default(now()) @updatedAt @db.Timestamptz()
+
+  // Relations
+  individual Individual @relation(fields: [individual_id], references: [id])
+  recorder   User       @relation(fields: [recorded_by], references: [id])
+
+  @@map("injury_log")
+}
+
+model AnnualMedicalExam {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  individual_id         String        @db.Uuid
+  exam_date             DateTime      @db.Date
+  medical_category      String        @default("1A") @db.VarChar(5)
+  fitness_valid_until   DateTime      @db.Date
+  bmi                   Decimal?      @db.Decimal(4, 1)
+  vision_left           String?       @db.VarChar(20)
+  vision_right          String?       @db.VarChar(20)
+  hearing_status        HearingStatus
+  // SHAPE individual factors (1–5 each)
+  shape_s               Int?          @db.SmallInt
+  shape_h               Int?          @db.SmallInt
+  shape_a               Int?          @db.SmallInt
+  shape_p               Int?          @db.SmallInt
+  shape_e               Int?          @db.SmallInt
+  // COPE coding (0–2 each, applicable when category = 3)
+  cope_c                Int?          @db.SmallInt
+  cope_o                Int?          @db.SmallInt
+  cope_p                Int?          @db.SmallInt
+  cope_e                Int?          @db.SmallInt
+  lab_results           Json?
+  remarks               String?       @db.Text
+  examining_officer_id  String        @db.Uuid
+  created_at            DateTime      @default(now()) @db.Timestamptz()
+
+  // Relations
+  individual        Individual @relation(fields: [individual_id], references: [id])
+  examining_officer User       @relation(fields: [examining_officer_id], references: [id])
+
+  @@map("annual_medical_exam")
+}
+
+model Allergy {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  individual_id   String              @db.Uuid
+  allergen        String              @db.VarChar(255)
+  reaction_type   AllergyReactionType
+  severity        AllergySeverity
+  status          AllergyStatus       @default(active)
+  confirmed_by    String?             @db.Uuid
+  confirmed_date  DateTime?           @db.Date
+  notes           String?             @db.Text
+  created_at      DateTime            @default(now()) @db.Timestamptz()
+  updated_at      DateTime            @default(now()) @updatedAt @db.Timestamptz()
+
+  // Relations
+  individual        Individual @relation(fields: [individual_id], references: [id])
+  confirming_doctor User?      @relation("AllergyConfirmedBy", fields: [confirmed_by], references: [id])
+
+  @@index([individual_id])
+  @@map("allergies")
+}
+
+model AuditLog {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String      @db.Uuid
+  action        AuditAction
+  resource_type String      @db.VarChar(100)
+  resource_id   String?     @db.Uuid
+  old_value     Json?
+  new_value     Json?
+  ip_address    String?
+  user_agent    String?     @db.Text
+  created_at    DateTime    @default(now()) @db.Timestamptz()
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, created_at])
+  @@map("audit_logs")
+}
+
+model RefreshToken {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @db.Text
+  device_id  String?   @db.VarChar(255)
+  expires_at DateTime  @db.Timestamptz()
+  revoked_at DateTime? @db.Timestamptz()
+  created_at DateTime  @default(now()) @db.Timestamptz()
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([token_hash])
+  @@map("refresh_tokens")
+}
+
+model Notification {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipient_id  String           @db.Uuid
+  individual_id String           @db.Uuid
+  type          NotificationType
+  title         String           @db.VarChar(255)
+  message       String           @db.Text
+  is_read       Boolean          @default(false)
+  created_at    DateTime         @default(now()) @db.Timestamptz()
+  read_at       DateTime?        @db.Timestamptz()
+
+  recipient   User       @relation(fields: [recipient_id], references: [id])
+  individual  Individual @relation(fields: [individual_id], references: [id])
+
+  @@index([recipient_id, is_read, created_at])
+  @@map("notifications")
+}

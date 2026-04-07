@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment — NEVER commit these
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Next.js build output
+.next/
+out/
+build/
+
+# Prisma generated client
+arogya-drishti-backend/node_modules/
+arogya-drishti-frontend/node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Misc
+*.command
+*.pem

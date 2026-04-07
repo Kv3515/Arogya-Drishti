@@ -1,0 +1,18 @@
+{
+  "name": "Arogya Drishti",
+  "short_name": "Arogya",
+  "description": "Mobile health record for defence personnel",
+  "start_url": "/mobile/me",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#14B8A6",
+  "icons": [
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
