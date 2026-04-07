@@ -3,15 +3,17 @@
  * Access token is stored in memory; refresh token is in an httpOnly cookie.
  */
 
-// Derive API host from the browser's own hostname so mobile (LAN IP) and
-// desktop (localhost) both work automatically without any config changes.
+// If NEXT_PUBLIC_API_URL is set (Vercel / any deployment), always use it.
+// Otherwise fall back to same-host:3001 for local LAN/dev convenience.
 function resolveApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
   if (typeof window !== 'undefined') {
     const host = window.location.hostname; // e.g. "192.168.0.149" or "localhost"
     return `http://${host}:3001/api/v1`;
   }
-  // SSR fallback
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
+  return 'http://localhost:3001/api/v1';
 }
 const API_BASE = resolveApiBase();
 

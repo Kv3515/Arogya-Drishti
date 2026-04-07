@@ -46,9 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        const apiBase = typeof window !== 'undefined'
-          ? `http://${window.location.hostname}:3001/api/v1`
-          : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1');
+        const apiBase = process.env.NEXT_PUBLIC_API_URL
+          ?? (typeof window !== 'undefined'
+            ? `http://${window.location.hostname}:3001/api/v1`
+            : 'http://localhost:3001/api/v1');
         const res = await fetch(
           `${apiBase}/auth/refresh`,
           { method: 'POST', credentials: 'include' },
